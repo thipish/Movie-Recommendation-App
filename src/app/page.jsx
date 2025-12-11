@@ -10,11 +10,20 @@ import { FiFilm, FiStar, FiList, FiUser, FiLogIn, FiLogOut, FiPlus, FiX, FiCheck
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+// Defensive Initialization Fix: Check if env vars exist before creating client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+const supabase = 
+  supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : { // Fallback/Mocked client to allow Next.js build to succeed
+        auth: { 
+            getUser: () => ({ data: { user: null } }), 
+            onAuthStateChange: () => ({ subscription: { unsubscribe: () => {} } }) 
+        }, 
+        from: () => ({ upsert: () => ({ error: true }), select: () => ({ eq: () => ({ single: () => ({ data: null, error: true }) }), order: () => ({ then: () => ({ data: null, error: true }) }) }), delete: () => ({ eq: () => ({ error: true }) }), update: () => ({ eq: () => ({ error: true }) }) }) 
+    };
 
 export default function Home() {
   const [genre, setGenre] = useState('');
@@ -62,6 +71,9 @@ export default function Home() {
 
   // Ensure a user profile exists
   const ensureProfileExists = async (userId) => {
+    // Skip if client is mocked (meaning keys are missing)
+    if (!supabaseUrl) return; 
+    
     try {
       const { data: existingProfile, error: fetchError } = await supabase
         .from('profiles')
@@ -101,6 +113,12 @@ export default function Home() {
 
   // Check for user session on component mount
   useEffect(() => {
+    // Only run if Supabase keys are present
+    if (!supabaseUrl) {
+      console.error("Supabase client not initialized. Check NEXT_PUBLIC_SUPABASE_URL in Netlify env vars.");
+      return; 
+    }
+    
     const checkUser = async () => {
       try {
         const { data } = await supabase.auth.getUser();
@@ -165,7 +183,7 @@ export default function Home() {
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [supabaseUrl]); // Dependency added to re-run if URL changes (though static)
 
   const fetchUserLists = async (userId) => {
     try {
@@ -189,6 +207,11 @@ export default function Home() {
       setAuthError('Please fill in all fields');
       return;
     }
+    if (!supabaseUrl) {
+      setAuthError('App not configured: Supabase environment keys missing.');
+      return;
+    }
+
 
     setAuthLoading(true);
     setAuthError(null);
@@ -240,6 +263,11 @@ export default function Home() {
       setAuthError('Please enter your email and password');
       return;
     }
+    if (!supabaseUrl) {
+      setAuthError('App not configured: Supabase environment keys missing.');
+      return;
+    }
+
 
     setAuthLoading(true);
     setAuthError(null);
@@ -314,6 +342,12 @@ export default function Home() {
       showToast('Please sign in to save movies', 'info');
       return;
     }
+    // Check if client is mocked (meaning keys are missing)
+    if (!supabaseUrl) {
+      showToast('App not configured: Cannot save list without Supabase keys.', 'error');
+      return;
+    }
+
     setCurrentMovie(movie);
     setShowListModal(true);
   };
@@ -646,7 +680,7 @@ export default function Home() {
                     }}
                     className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg ${activeTab === 'lists' ? 'bg-cyan-900/50 text-cyan-400' : 'text-gray-300 hover:bg-gray-700/50'}`}
                   >
-                    <FiList /> {/* FIXED SYNTAX ERROR HERE */}
+                    <FiList />
                     <span>My Lists</span>
                   </button>
                   
@@ -1155,7 +1189,7 @@ export default function Home() {
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
               <FiFilm className="text-xl text-cyan-400" />
-              <span className="text-xl font-bold text-cyan-400"> 
+              <span className="text-xl font-bold text-cyan-400"> {/* CHANGED: Name */}
                 CineMatch
               </span>
             </div>
@@ -1192,7 +1226,7 @@ export default function Home() {
 </div>
           </div>
           <div className="mt-4 text-center md:text-left text-gray-500 text-sm">
-            © {new Date().getFullYear()} CineMatch. All rights reserved. 
+            © {new Date().getFullYear()} CineMatch. All rights reserved. {/* CHANGED: Name */}
           </div>
         </div>
       </footer>
