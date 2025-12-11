@@ -3,27 +3,39 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 
-// NOTE: We only import dependencies here. Initialization moves inside POST.
+// NOTE: All client initialization (Supabase, Gemini) has been moved inside the handler 
+// to ensure environment variables are loaded and prevent build crash (the "supabaseUrl is required" error).
 
 export async function POST(request) {
-  // CRITICAL FIX: Initialize Supabase and Gemini/TMDB keys inside the handler
-  // This prevents the build process (which runs before env vars are fully loaded) from crashing.
+  // 1. Fetch Environment Variables
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const tmdbApiKey = process.env.TMDB_API_KEY;
   const geminiApiKey = process.env.GEMINI_API_KEY;
 
+  // 2. Defensive Check and Initialization
   if (!supabaseUrl || !supabaseKey) {
     return NextResponse.json({ 
-        error: 'Backend Configuration Error', 
-        details: 'Supabase URL or Key is missing. Check Netlify Environment variables.' 
+        error: 'Configuration Error (Supabase)', 
+        details: 'The SUPABASE_URL or SUPABASE_ANON_KEY environment variables are missing on the server. Please check Netlify Build settings.' 
+    }, { status: 500 });
+  }
+  if (!geminiApiKey) {
+    return NextResponse.json({ 
+        error: 'Configuration Error (Gemini)', 
+        details: 'The GEMINI_API_KEY is missing on the server. Please check Netlify Build settings.' 
+    }, { status: 500 });
+  }
+  if (!tmdbApiKey) {
+    return NextResponse.json({ 
+        error: 'Configuration Error (TMDB)', 
+        details: 'The TMDB_API_KEY is missing on the server. Please check Netlify Build settings.' 
     }, { status: 500 });
   }
 
-  // Initialize clients here, where environment variables are guaranteed to be present.
+  // Initialize clients here, inside the handler
   const supabase = createClient(supabaseUrl, supabaseKey);
   const genAI = new GoogleGenerativeAI(geminiApiKey);
-
 
   try {
     const { genre, language, additionalDetails, userId, savePreferences } = await request.json();
@@ -31,10 +43,6 @@ export async function POST(request) {
 
     if (!genre) {
       return NextResponse.json({ error: 'Genre is required' }, { status: 400 });
-    }
-
-    if (!tmdbApiKey) {
-      return NextResponse.json({ error: 'TMDB API key is not configured' }, { status: 500 });
     }
 
     // Save user preferences if requested
@@ -118,9 +126,11 @@ export async function POST(request) {
       }
     }
 
+    // TMDB API requests
     console.log('Calling TMDB API for movie details');
     const movieDetailsPromises = movieTitles.map(async (title, index) => {
-      await delay(index * 200); // Rate limit
+      // Small enforced sequential delay to avoid rate limiting
+      await delay(index * 200); 
 
       try {
         const response = await fetchWithRetry(
@@ -266,8 +276,6 @@ export async function POST(request) {
 
 // Save movie list
 async function saveMovieList(userId, listName, movies, searchCriteria) {
-  // NOTE: This helper also needs the Supabase client, so it would need to be passed in or initialized here too, 
-  // but since it's not currently used, we will leave it as is.
-  // ...
+  // NOTE: This helper is not used in the current POST handler, so no change needed here.
   return null;
 }
